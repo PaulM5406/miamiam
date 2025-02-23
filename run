@@ -1,0 +1,58 @@
+#!/usr/bin/env python
+
+import asyncio
+from datetime import timedelta
+
+import click
+import structlog
+
+from miamiam.client import InseeClient
+from miamiam.logging import setup_logging
+from miamiam.utils import get_current_time
+
+logger = structlog.get_logger()
+
+
+async def main(days: int, city: str) -> None:
+    """Search for new restaurant and bar openings in France."""
+    setup_logging()
+
+    client = InseeClient()
+    from_date = get_current_time() - timedelta(days=days)
+
+    try:
+        establishments = await client.search_establishments(from_date)
+        for establishment in establishments:
+            if city and establishment.city.lower() != city.lower():
+                continue
+            logger.info(
+                "Found new establishment",
+                name=establishment.name,
+                address=establishment.address,
+                city=establishment.city,
+                created_at=establishment.creation_date,
+            )
+    except Exception as e:
+        logger.error("Failed to fetch establishments", error=str(e))
+        raise click.ClickException(str(e))
+
+
+@click.command()
+@click.option(
+    "--days",
+    default=1,
+    help="Number of days to look back for new establishments",
+    type=int,
+)
+@click.option(
+    "--city",
+    help="Filter results by city name",
+    type=str,
+    required=False,
+)
+def run(days: int, city: str | None) -> None:
+    asyncio.run(main(days, city))
+
+
+if __name__ == "__main__":
+    run()
